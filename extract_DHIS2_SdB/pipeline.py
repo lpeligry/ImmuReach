@@ -21,12 +21,16 @@ import polars as pl
     multiple=True
     required=True
 )
-def Extraction_DHIS2_SdB(dhis_con: DHIS2Connection, month: str):
+def Extraction_DHIS2_SdB(dhis_con, month):
 
     dhis_con = get_dhis(dhis_con)
     org_unit = get_org_unit(dhis_con)
     data_elements = get_data_elements(dhis_con, month, org_unit)
-    table = enrich_data(dhis_con, data_elements, org_unit)
+    data_enriched = enrich_data(dhis_con, data_elements, org_unit)
+    data_enriched_pivoted = pivot_dataframe(data_enriched)
+
+
+
 
 
 @Extraction_DHIS2_SdB.task
@@ -62,18 +66,50 @@ def get_data_elements(connection, month, org_unit):
 
 
 @Extraction_DHIS2_SdB.task
-def enrich_data(connection, dataframe, org_unit):
+def enrich_data(connection, df, org_unit):
 
     data_element_name = pl.DataFrame(connection.meta.data_elements())
     category_option_combos = pl.DataFrame(connection.meta.category_option_combos()).rename({'name':'category'})
 
-    df_org_unit = dataframe.join(org_unit, left_on='orgUnit', right_on='id').select(pl.col(['dataElement', 'categoryOptionCombo', 'period', 'orgUnit', 'name', 'value'])).rename({"name":"cs"})
+    df_org_unit = df.join(org_unit, left_on='orgUnit', right_on='id').select(pl.col(['dataElement', 'categoryOptionCombo', 'period', 'orgUnit', 'name', 'value'])).rename({"name":"cs"})
     df_data_element = df_org_unit.join(data_element_name, left_on='dataElement', right_on='id').select(pl.col(['dataElement', 'categoryOptionCombo', 'name', 'period', 'orgUnit', 'cs', 'value']))
-    df_all = df_data_element.join(category_option_combos, left_on='categoryOptionCombo', right_on='id').select(pl.col(['dataElement', 'name', 'categoryOptionCombo', 'category', 'period', 'orgUnit', 'cs', 'value']))
+    df_enriched = df_data_element.join(category_option_combos, left_on='categoryOptionCombo', right_on='id').select(pl.col(['dataElement', 'name', 'categoryOptionCombo', 'category', 'period', 'orgUnit', 'cs', 'value']))
 
-    df_all = df_all.to_pandas().rename(columns={'dataElement':'data_element', 'categoryOptionCombo':'category_option_combo', 'orgUnit':'org_unit'})
+    df_enriched = df_enriched.to_pandas().rename(columns={'dataElement':'data_element', 'categoryOptionCombo':'category_option_combo', 'orgUnit':'org_unit'})
 
-    return df_all
+    return df_enriched
+
+
+@Extraction_DHIS2_SdB.task
+def pivot_dataframe(df):
+    
+    df_pl = pl.from_pandas(df)
+    df_pl = df_pl.drop(['data_element', 'category_option_combo'])
+    
+    df_pl = df_pl.with_columns([
+        pl.when(pl.col('name') == 'A 1.1 Cas reçus')
+        .then(pl.concat_str([pl.col('name'), pl.col('category')], separator=' '))
+        .otherwise(pl.col('name'))
+        .alias('name_category')
+    ])
+    
+    df_pivot = df_pl.pivot(
+        values='value',
+        index=['org_unit', 'cs', 'period'],
+        columns='name_category',
+        aggregate_function='first'
+    )
+
+    df_pivot = df_pivot.to_pandas().replace({None: np.nan})
+
+    return df_pivot
+
+
+@Extraction_DHIS2_SdB.task
+def save_df(df):
+    
+
+
 
 
 
