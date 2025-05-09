@@ -1,8 +1,11 @@
 from openhexa.sdk import pipeline, current_run, parameter, workspace
 from openhexa.toolbox.dhis2 import DHIS2
-##from openhexa.sdk.workspaces.connection import DHIS2Connection
+from sqlalchemy import create_engine
+from openhexa.sdk.workspaces.connection import DHIS2Connection
+import os 
 import pandas as pd
 import polars as pl
+import numpy as np
 
 
 @pipeline("Extraction_DHIS2_SdB")
@@ -18,7 +21,7 @@ import polars as pl
     name="Chosen month",
     help="ISO format: yyyymm",
     type=str,
-    multiple=True
+    multiple=True,
     required=True
 )
 def Extraction_DHIS2_SdB(dhis_con, month):
@@ -28,7 +31,7 @@ def Extraction_DHIS2_SdB(dhis_con, month):
     data_elements = get_data_elements(dhis_con, month, org_unit)
     data_enriched = enrich_data(dhis_con, data_elements, org_unit)
     data_enriched_pivoted = pivot_dataframe(data_enriched)
-
+    save_data = save_data(data_enriched_pivoted)
 
 
 
@@ -104,14 +107,11 @@ def pivot_dataframe(df):
 
     return df_pivot
 
-
 @Extraction_DHIS2_SdB.task
-def save_df(df):
+def save_data(df):
+    engine = create_engine(os.environ["WORKSPACE_DATABASE_URL"])
+    df.to_sql(f'Services_de_base_{month}', con=engine, if_exists="append",  chunksize=10000)
     
-
-
-
-
 
 
 
