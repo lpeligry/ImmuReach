@@ -31,7 +31,7 @@ def Extraction_DHIS2_SdB(dhis_con, month):
     data_elements = get_data_elements(dhis_con, month, org_unit)
     data_enriched = enrich_data(dhis_con, data_elements, org_unit)
     data_enriched_pivoted = pivot_dataframe(data_enriched)
-    save_data = save_data(data_enriched_pivoted)
+    save_data = save_data(data_enriched_pivoted, month)
 
 
 
@@ -108,7 +108,7 @@ def pivot_dataframe(df):
     return df_pivot
 
 @Extraction_DHIS2_SdB.task
-def save_data(df):
+def save_data(df, month):
     engine = create_engine(os.environ["WORKSPACE_DATABASE_URL"])
     df.to_sql(f'Services_de_base_{month}', con=engine, if_exists="append",  chunksize=10000)
     
