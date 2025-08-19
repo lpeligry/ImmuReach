@@ -9,13 +9,13 @@ import numpy as np
 
 
 @pipeline("Extraction_DHIS2_SdB")
-@parameter(
-    "dhis_con",
-    name="DHIS2 Connection",
-    type=DHIS2Connection,
-    default="snis-drc",
-    required=True,
-)
+# @parameter(
+#     "dhis_con",
+#     name="DHIS2 Connection",
+#     type=DHIS2Connection,
+#     default="snis-drc",
+#     required=True,
+# )
 @parameter(
     "month",
     name="Chosen month",
@@ -26,19 +26,25 @@ import numpy as np
 )
 def Extraction_DHIS2_SdB(dhis_con, month):
 
-    dhis_con = get_dhis(dhis_con)
+    # cache_dir = 
+
+    # dhis_con = DHIS2(connection='snis-drc', cache_dir=)
+
+    try:
+        con = workspace.dhis2_connection("snis-drc") 
+        dhis2 = DHIS2(con, cache_dir=None)
+    except Exception as e:
+        raise
     org_unit = get_org_unit(dhis_con)
     data_elements = get_data_elements(dhis_con, month, org_unit)
     data_enriched = enrich_data(dhis_con, data_elements, org_unit)
     data_enriched_pivoted = pivot_dataframe(data_enriched)
-    save_data = save_data(data_enriched_pivoted, month)
+    save = save_data(data_enriched_pivoted, month)
 
 
-
-
-@Extraction_DHIS2_SdB.task
-def get_dhis(connection): 
-    return DHIS2(connection)
+# @Extraction_DHIS2_SdB.task
+# def get_dhis(connection): 
+#     return DHIS2(connection)
 
 
 @Extraction_DHIS2_SdB.task
@@ -107,10 +113,12 @@ def pivot_dataframe(df):
 
     return df_pivot
 
+
 @Extraction_DHIS2_SdB.task
 def save_data(df, month):
     engine = create_engine(os.environ["WORKSPACE_DATABASE_URL"])
-    df.to_sql(f'Services_de_base_{month}', con=engine, if_exists="append",  chunksize=10000)
+    df.to_sql(f'Services_de_base_{month}', con=engine, if_exists="replace",  chunksize=10000)
+    # return current_run.log_info(f"✅ Succès ! Données sauvegardées dans Services_de_base_{month}")
     
 
 
