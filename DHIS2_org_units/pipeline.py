@@ -1,6 +1,7 @@
 from openhexa.sdk import pipeline, current_run, parameter, workspace
 from openhexa.toolbox.dhis2 import DHIS2
 from openhexa.toolbox.dhis2 import dataframe
+from pathlib import Path
 #from openhexa.sdk.workspaces.connection import DHIS2Connection
 
 from dateutil.relativedelta import relativedelta
@@ -40,22 +41,22 @@ import json
 )
 def dhis2_org_units(
     level: int,
-    coor_syst: str | 'EPSG:32734',
+    coor_syst: str | "EPSG:32734",
     end_date: str | '2022'
-)
-    """Extract org units from a DHIS2 instance and reproject if needed.
+    ):
+    """ Extract org units from a DHIS2 instance and reproject if needed.
         For level = 5, remove FOSA which were closed before end_date """
     
     current_run.log_info("Début pipeline d'extraction des unités organisationnelle")
 
-    # Connection au SNIS
+    # Connection au SNIS --------------------------
     try:
         dhis2 = DHIS2(workspace.dhis2_connection("snis-drc"), cache_dir=None)
     
     except Exception as e:
         raise Exception(f"Erreur lors de la connection au SNIS : {e}") from e
     
-    # Retrieve data
+    # Retrieve data --------------------------
     try:
         file = retrieve_data(dhis2, level, coor_syst)
         current_run.log_info(f"{len(file)} géométries ont été extraite du SNIS pour le niveau {level} de la pyramide sanitaire.")
@@ -65,7 +66,7 @@ def dhis2_org_units(
     
     # Uncomment to get dataframe of health centers opened after end_date
 
-    # Filter on every health facilites which were still opened after end_date.
+    # Filter on every health facilites which were still opened after end_date. --------------------------
     # Then standardise the dataset (1 row = 1 health center + period + open/close)
     # if level==5:
     #     # Filter on dates
@@ -75,7 +76,25 @@ def dhis2_org_units(
     #     file = standardise(data, end_date)
 
 
-        
+    # Save data --------------------------
+    # Create a repository by name of EPSG 
+    try:
+        output_path = Path(workspace.files_path) / "Pipelines/data/out/Shapes" / coor_syst
+        output_path.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        raise Exception(f"Erreur lors de la création du dossier de sortie {output_path}: {e}") from e
+    
+    # Save
+    try:
+        output_fname = Path(output_path).joinpath(f"level_{level}")
+        file.to_file(output_fname, driver="GPKG")
+        current_run.log_info(f"GeoDataFrame successfully saved to {output_fname}")
+    except PermissionError as e:
+        raise PermissionError("Error: You don't have permission to access this file.") from e
+    except OSError as e:
+        raise OSError(f"An I/O error occurred: {e}") from e
+    except Exception as e:
+        raise Exception(f"An unexpected error occurred: {e}") from e
     
 
 
@@ -93,7 +112,7 @@ def retrieve_data(dhis2_connection, level, coor_syst):
     df_org_unit = df_org_unit.with_columns(pl.col(f"level_{level+1}_name").str.strip_char())
     df_org_unit = df_org_unit.with_columns(pl.col(f"level_{level}_name").str.strip_char())
 
-    # Select columns
+    # Select columns (level, level+1, geometry (+ dates if level = 5))
     if level == 5:
         df_org_unit = df_org_unit.select([f"level_{level}_id", f"level_{level}_name", "opening_date", "closed_date", "geometry"])
     else:
@@ -154,3 +173,5 @@ def retrieve_data(dhis2_connection, level, coor_syst):
 #     return standardized_df
 
 
+if __name__ == "__main__":
+    dhis2_org_units()
